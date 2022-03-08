@@ -1,58 +1,50 @@
-import com.jcraft.jsch.ChannelExec;
-import com.jcraft.jsch.JSch;
-import com.jcraft.jsch.Session;
-import models.AppModel;
-import panels.InitPanel;
+import io.ConfigParser;
+import models.MiningWorker;
+import services.MiningWorkerMonitorService;
+import sun.misc.Signal;
 
-import javax.swing.*;
-import java.io.ByteArrayOutputStream;
+import java.util.ArrayList;
 
 public class App {
-    public static void main(String[] args) throws Exception {
-        JFrame jFrame = new JFrame("Mining Monitor");
-        jFrame.setUndecorated(true);
-        jFrame.setVisible(true);
-        jFrame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
-        jFrame.pack();
-        AppModel appModel = new AppModel();
-        InitPanel initPanel = new InitPanel(appModel);
 
-        jFrame.getContentPane().add(initPanel);
-        jFrame.pack();
 
-        listFolderStructure("user", "1", "192.168.0.127", 22,"curl http://localhost:22333/api/v1/status | python -m json.tool");
-    }
-    public static void listFolderStructure(String username, String password,
-                                           String host, int port, String command) throws Exception {
+    public static void main(String[] args) {
 
-        Session session = null;
-        ChannelExec channel = null;
+        System.out.println("Command line mining rig monitor.... starting...."+System.lineSeparator());
+
+        ConfigParser configParser = new ConfigParser();
+        ArrayList<MiningWorker> miningWorkers = configParser.parse();
+        printWorkerDetails(miningWorkers);
+
+        if(miningWorkers.size()==0) System.out.println("No worker is configured in monitor.conf file");
+
+        else{
+            startMonitoringService(miningWorkers);
+        }
+
+        Signal.handle(new Signal("INT"), sig -> System.out.println("close event"));
+
 
         try {
-            session = new JSch().getSession(username, host, port);
-            session.setPassword(password);
-            session.setConfig("StrictHostKeyChecking", "no");
-            session.connect();
 
-            channel = (ChannelExec) session.openChannel("exec");
-            channel.setCommand(command);
-            ByteArrayOutputStream responseStream = new ByteArrayOutputStream();
-            channel.setOutputStream(responseStream);
-            channel.connect();
-
-            while (channel.isConnected()) {
-                Thread.sleep(100);
-            }
-
-            String responseString = new String(responseStream.toByteArray());
-            System.out.println(responseString);
-        } finally {
-            if (session != null) {
-                session.disconnect();
-            }
-            if (channel != null) {
-                channel.disconnect();
-            }
+        } catch (Exception e) {
+            e.printStackTrace();
         }
     }
+
+    public static void startMonitoringService(ArrayList<MiningWorker> miningWorkers){
+        for(MiningWorker miningWorker: miningWorkers){
+            MiningWorkerMonitorService monitorService = new MiningWorkerMonitorService(miningWorker);
+            monitorService.start();
+            miningWorker.setMiningWorkerMonitorService(monitorService);
+        }
+    }
+
+    public static void printWorkerDetails(ArrayList<MiningWorker> miningWorkers){
+        for(int i = 0 ; i < miningWorkers.size() ; i ++){
+            MiningWorker miningWorker = miningWorkers.get(i);
+            System.out.println(i+".\tworker:\t"+miningWorker.getWorkerName()+"\n\tip:\t\t"+miningWorker.getWorkerIp()+"\tport:\t"+miningWorker.getWorkerPort()+System.lineSeparator());
+        }
+    }
+
 }
